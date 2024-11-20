@@ -12,18 +12,20 @@
 #include <_Common.h>
 #include <_Scene.h>
 
-HDC		hDC=NULL;	    // Private GDI Device Context
+HDC		    hDC=NULL;	// Private GDI Device Context
 HGLRC		hRC=NULL;	// Permanent Rendering Context
 HWND		hWnd=NULL;	// Holds Our Window Handle
 HINSTANCE	hInstance;	// Holds The Instance Of The Application
 
 bool	keys[256];		// Array Used For The Keyboard Routine
 bool	active=TRUE;	// Window Active Flag Set To TRUE By Default
-bool	fullscreen=FALSE;// Fullscreen Flag Set To Not Fullscreen Mode By Default
+bool	fullscreen=TRUE;// Fullscreen Flag Set To Fullscreen Mode By Default
 
 LRESULT	CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);	// Declaration For WndProc
+_Scene *Scene = new _Scene();
 
-Scene *scene = new Scene();
+// added this
+bool shouldExit = false; // global exit flag
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 //										THE KILL GL WINDOW
@@ -154,7 +156,7 @@ BOOL CreateGLWindow(char* title, int width, int height, int bits, bool fullscree
 		return FALSE;						                // Return FALSE
 	}
 
-	static	PIXELFORMATDESCRIPTOR pfd=				        // pfd Tells Windows How We Want Things To Be
+	static PIXELFORMATDESCRIPTOR pfd=				        // pfd Tells Windows How We Want Things To Be
 	{
 		sizeof(PIXELFORMATDESCRIPTOR),				        // Size Of This Pixel Format Descriptor
 		1,							                        // Version Number
@@ -211,18 +213,17 @@ BOOL CreateGLWindow(char* title, int width, int height, int bits, bool fullscree
 		return FALSE;						                // Return FALSE
 	}
 
-	if(!scene->initGL())					        // Try To Activate The Rendering Context
+	if(!Scene->initGL())					        // Try To Activate The Rendering Context
 	{
 		KillGLWindow();						                // Reset The Display
-		MessageBox(NULL,"Scene Initialization Failed.","ERROR",MB_OK|MB_ICONEXCLAMATION);
+		MessageBox(NULL,"Scene initialization Failed.","ERROR",MB_OK|MB_ICONEXCLAMATION);
 		return FALSE;						                // Return FALSE
 	}
 
 	ShowWindow(hWnd,SW_SHOW);					            // Show The Window
 	SetForegroundWindow(hWnd);					            // Slightly Higher Priority
-	SetFocus(hWnd);							                // Sets Keyboard Focus To The Window
-
-	scene->resizeScene(width,height);
+	SetFocus(hWnd);
+	Scene->resizeScene(width, height);						// Sets Keyboard Focus To The Window
 
 	return TRUE;							                // Success
 }
@@ -238,7 +239,8 @@ LRESULT CALLBACK WndProc(
 			  WPARAM wParam,		// Additional Message Information
 			  LPARAM lParam)		// Additional Message Information
 {
-    scene->winMsg(hWnd, uMsg, wParam, lParam);
+	Scene->winMsg(hWnd,	uMsg, wParam,lParam); // passing values to the scene
+
 
 	switch (uMsg)					// Check For Windows Messages
 	{
@@ -288,7 +290,8 @@ LRESULT CALLBACK WndProc(
 
 		case WM_SIZE:				// Resize The OpenGL Window
 		{
-            scene->resizeScene(LOWORD (lParam),HIWORD (lParam));   // LoWord=Width, HiWord=Height
+		    Scene->resizeScene(LOWORD(lParam), HIWORD(lParam));
+                                    // LoWord=Width, HiWord=Height
 			return 0;			    // Jump Back
 		}
 	}
@@ -312,16 +315,20 @@ int WINAPI WinMain(
 	BOOL	done=FALSE;				    // Bool Variable To Exit Loop
 
 	int	fullscreenWidth  = GetSystemMetrics(SM_CXSCREEN);
-    	int	fullscreenHeight = GetSystemMetrics(SM_CYSCREEN);
+    int	fullscreenHeight = GetSystemMetrics(SM_CYSCREEN);
 
+	// Ask The User Which Screen Mode They Prefer
+//	if (MessageBox(NULL,"Would You Like To Run In Fullscreen Mode?", "Start FullScreen?",MB_YESNO|MB_ICONQUESTION)==IDNO)
+//	{
+//		fullscreen=FALSE;			    // Windowed Mode
+//	}
+//
 	// Create Our OpenGL Window
 
-	if (!CreateGLWindow("Assignment 1",fullscreenWidth,fullscreenHeight,256,fullscreen))
+	if (!CreateGLWindow("Game Engine Lesson 01",fullscreenWidth,fullscreenHeight,256,fullscreen))
 	{
 		return 0;				        // Quit If Window Was Not Created
 	}
-
-	int o = 0;
 
 	while(!done)					    // Loop That Runs While done=FALSE
 	{
@@ -341,13 +348,109 @@ int WINAPI WinMain(
 	  else						        // If There Are No Messages
 		{
 			// Draw The Scene.  Watch For ESC Key And Quit Messages From DrawGLScene()
-			if (!active || keys[VK_ESCAPE])	// Active?  Was There A Quit Received?
+			// Check if the game is not paused
+			if (Scene->currentState != PAUSE_MENU)
+            {
+                if (!active)
+                {
+                    done = TRUE;
+                    KillGLWindow();
+                }
+                else
+                {
+                    Scene->drawScene();
+                    SwapBuffers(hDC);
+                }
+
+                if (keys[VK_F1])
+                {
+                    keys[VK_F1] = FALSE;
+                    KillGLWindow();
+                    fullscreen = !fullscreen;
+
+                    if (!CreateGLWindow("Game Engine Lesson 01", fullscreenWidth, fullscreenHeight, 256, fullscreen))
+                    {
+                        return 0;
+                    }
+                }
+
+                if (keys[VK_F3])
+                {
+                    Scene->wireFrame = !Scene->wireFrame;
+                }
+            }
+            else
+            {
+                // When the game is paused, only draw the pause menu
+                Scene->drawScene();
+                SwapBuffers(hDC);
+            }
+		}
+    }
+
+    KillGLWindow();
+    return (msg.wParam);				// Exit The Program
+}
+
+
+/*(ORIGINAL THAT WORKS) BEFORE IMPLEMENTING PAUSE MENU
+/////////////////////////////////////////////////////////////////////////////////////////////////
+//				THE WINMAIN
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+int WINAPI WinMain(
+
+            HINSTANCE	hInstance,	    // Instance
+		    HINSTANCE	hPrevInstance,	// Previous Instance
+		    LPSTR	lpCmdLine,		    // Command Line Parameters
+		    int		nCmdShow)	    	// Window Show State
+   {
+ 	MSG	msg;					        // Windows Message Structure
+	BOOL	done=FALSE;				    // Bool Variable To Exit Loop
+
+	int	fullscreenWidth  = GetSystemMetrics(SM_CXSCREEN);
+    int	fullscreenHeight = GetSystemMetrics(SM_CYSCREEN);
+
+	// Ask The User Which Screen Mode They Prefer
+//	if (MessageBox(NULL,"Would You Like To Run In Fullscreen Mode?", "Start FullScreen?",MB_YESNO|MB_ICONQUESTION)==IDNO)
+//	{
+//		fullscreen=FALSE;			    // Windowed Mode
+//	}
+//
+	// Create Our OpenGL Window
+
+	if (!CreateGLWindow("Game Engine Lesson 01",fullscreenWidth,fullscreenHeight,256,fullscreen))
+	{
+		return 0;				        // Quit If Window Was Not Created
+	}
+
+	while(!done)					    // Loop That Runs While done=FALSE
+	{
+	  if (PeekMessage(&msg,NULL,0,0,PM_REMOVE))	// Is There A Message Waiting?
+		{
+			if (msg.message==WM_QUIT)	// Have We Received A Quit Message?
+			{
+				done=TRUE;		        // If So done=TRUE
+			}
+			else				        // If Not, Deal With Window Messages
+			{
+				TranslateMessage(&msg);	// Translate The Message
+				DispatchMessage(&msg);	// Dispatch The Message
+			}
+		}
+
+	  else						        // If There Are No Messages
+		{
+			// Draw The Scene.  Watch For ESC Key And Quit Messages From DrawGLScene()
+			// modified this, to not include VK_ESCAPE to quit game or anything
+			// if (!active || keys[VK_ESCAPE])	// Active?  Was There A Quit Received?
+            if (!active)
 			{
 				done=TRUE;		        // ESC or DrawGLScene Signalled A Quit
 			}
 			else				        // Not Time To Quit, Update Screen
 			{
-			    scene->drawScene();
+			    Scene->drawScene();
 				SwapBuffers(hDC);	    // Swap Buffers (Double Buffering)
 			}
 
@@ -364,11 +467,16 @@ int WINAPI WinMain(
 					return 0;	        // Quit If Window Was Not Created
 				}
 			}
+
+			if (keys[VK_F3])		    // Is F1 Being Pressed?
+			{
+			    Scene->wireFrame = !Scene->wireFrame;
+			}
+
 		}
 	}
-
-
 	// Shutdown
 	KillGLWindow();					    // Kill The Window
 	return (msg.wParam);				// Exit The Program
 }
+*/
